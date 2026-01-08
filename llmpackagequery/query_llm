@@ -1,0 +1,218 @@
+#! /usr/bin/env python3
+import argparse
+import config
+import logging
+import os
+import query
+import re
+import request
+import sys
+import termios
+import time
+import tty
+import writer
+
+# Model names and their corresponding class name prefixes
+# deepseek-r1:latest:                DEEPSEEK_R1_LATEST
+# Meta-Llama-3-8B-Instruct.Q4_0:     META_LLAMA_3_8B_INSTRUCT_Q4_0
+# Nous-Hermes-2-Mistral-7B-DPO.Q4_0: NOUS_HERMES_2_MISTRAL_7B_DPO_Q4_0
+# Phi-3-mini-4k-instruct.Q4_0:       PHI_3_MINI_4K_INSTRUCT_Q4_0
+# orca-mini-3b-gguf2-q4_0:           ORCA_MINI_3B_GGUF2_Q4_0
+# gpt4all-13b-snoozy-q4_0:           GPT4ALL_13B_SNOOZY_Q4_0
+# gpt-4.1:                           GPT_4_1
+# gpt-5:                             GPT_5
+# gemini-2.5-flash:                  GEMINI_2_5_FLASH
+# gemini-2.5-pro:                    GEMINI_2_5_PRO
+# codestral-2508:                    CODESTRAL_2508
+
+model_choices = [
+    f"{query.QueryStub.OLLAMA.value}.deepseek-r1:latest",
+    f"{query.QueryStub.GPT4ALL.value}.Meta-Llama-3-8B-Instruct.Q4_0",
+    f"{query.QueryStub.GPT4ALL.value}.Nous-Hermes-2-Mistral-7B-DPO.Q4_0",
+    f"{query.QueryStub.GPT4ALL.value}.Phi-3-mini-4k-instruct.Q4_0",
+    f"{query.QueryStub.GPT4ALL.value}.orca-mini-3b-gguf2-q4_0",
+    f"{query.QueryStub.GPT4ALL.value}.gpt4all-13b-snoozy-q4_0",
+    f"{query.QueryStub.OPENAI.value}.gpt-4.1",
+    f"{query.QueryStub.OPENAI.value}.gpt-5",
+    f"{query.QueryStub.GEMINI.value}.gemini-2.5-flash",
+    f"{query.QueryStub.GEMINI.value}.gemini-2.5-pro",
+    f"{query.QueryStub.MISTRAL.value}.codestral-2508"
+    ]
+
+logging.basicConfig(level=logging.INFO)
+root_logger = logging.getLogger()
+timestamp_string = time.strftime("%Y%m%d_%H%M%S")
+formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
+
+# Set up the logger for this module
+log = logging.getLogger(__name__)
+
+def main():
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description="Process command line arguments.")
+    parser.add_argument(
+        "os_to_prompt",
+        type=str,
+        choices=["Fedora", "Ubuntu"],
+        help="Operating system to create package queries for "
+             "(choices: Fedora, Ubuntu)"
+    )
+    parser.add_argument(
+        "model_name",
+        type=str,
+        choices=model_choices,
+        help=f"Available LLM model name. Choose from list {model_choices}."
+    )
+    parser.add_argument(
+        "--base_package_list",
+        type=str,
+        default=config.BASE_PACKAGE_LIST,
+        help="Path to the input file containing package names to query."
+    )
+    parser.add_argument(
+        "--api_key",
+        type=str,
+        default=None,
+        help="API key for authentication."
+    )
+    parser.add_argument(
+        "--custom_attributes",
+        type=str,
+        default=",".join(writer.DEFAULT_PACKAGE_HEADER),
+        help="Add the attributes which should be queried from the LLM model " \
+             "and written to the CSV file."
+    )
+    parser.add_argument(
+        "--template_alternative",
+        type=str,
+        default=None,
+        help="Searches for template with alternative name created" \
+             "like {model}-{template_alternative}.tpl prompt template " \
+             "(optional)."
+    )
+    parser.add_argument(
+        "--query_restriction",
+        type=int,
+        default=None,
+        help="Restrict the number of queries to be executed (optional). " \
+             "Mainly for testing purposes."
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default=config.OLLAMA_HOST,
+        help="Host and port to connect to if applicable "\
+             f"(default: {config.OLLAMA_HOST}"
+    )
+
+
+    # Parse arguments
+    args = parser.parse_args()
+    tpl_alt = ""
+    if args.template_alternative: tpl_alt = f"-{args.template_alternative}"
+
+    # Check if any arguments are missing
+    if len(sys.argv) < 3 or args.base_package_list is None:
+        parser.print_usage()
+        exit_error("Missing required arguments.")
+
+    # Split on the first dot
+    query_stub, llm_model = args.model_name.split('.', 1)
+
+    # Create CSV file name with timestamp
+    csv_file_out = config.CSV_FILE.format(
+        os=args.os_to_prompt.lower(),
+        csv_base_path=config.CSV_BASE_PATH,
+        timestamp_string=timestamp_string,
+        llm_model=llm_model,
+        template_alternative=tpl_alt
+    )
+
+    prompt_template_file = config.QUERY_TEMPLATE_FILE.format(
+        os=args.os_to_prompt.lower(),
+        llm_model=llm_model,
+        query_template_path=config.QUERY_TEMPLATE_PATH,
+        template_alternative=tpl_alt
+    )
+
+    error_file_path = config.ERROR_FILE_PATH.format(
+        os=args.os_to_prompt.lower(),
+        logs_base_path=config.LOGS_BASE_PATH,
+        timestamp_string=timestamp_string,
+        llm_model=llm_model,
+        template_alternative=tpl_alt
+    )
+
+
+    attributes = args.custom_attributes.split(",")
+    attributes_pattern = re.compile("[A-Za-z0-9_]*")
+    # Check if the attribute string contains only [a-zA-Z0-9_]
+    for attr in attributes:
+        if not attributes_pattern.fullmatch(attr):
+            exit_error("Custom attributes should only contain " \
+                        "alphanumeric characters and underscores.")
+
+    # check if no duplicate attributes are in the list
+    if len(attributes) != len(set(attributes)):
+        exit_error("Custom attributes should not contain duplicates.")
+
+    # Check if the prompt template file exists
+    if not os.path.exists(prompt_template_file):
+        exit_error(f"Prompt template file {prompt_template_file} does not exist.")
+
+    file_log_handler = logging.FileHandler(error_file_path)
+    file_log_handler.propagate = True
+    file_log_handler.setLevel(logging.ERROR)
+    file_log_handler.setFormatter(formatter)
+
+    # Add handler to the root logger
+    root_logger.addHandler(file_log_handler)
+
+    # Inform what the user is signing up for
+    log.info(f"Using OS: {args.os_to_prompt}")
+    log.info(f"Using query stub: {query_stub}")
+    log.info(f"Using model: {llm_model}")
+    log.info(f"Using base package list: {args.base_package_list}")
+    log.info(f"Prompting template file: {prompt_template_file}")
+    log.info(f"Attributes fetched: {attributes}")
+    if args.query_restriction:
+        log.info(f"Query restriction: {args.query_restriction}")
+    else:
+        log.info("Query restriction: Not set.")
+    log.info(f"Writing to: {csv_file_out}")
+    log.info(f"Error log file: {error_file_path}")
+
+    # wait for key pressed to continue or ESC to stop
+    # and start the query execution
+    wait_for_keypress()
+    request.execute(
+        query_stub=query_stub,
+        llm_model=llm_model,
+        prompt_template_file=prompt_template_file,
+        csv_file_out=csv_file_out,
+        attributes=attributes,
+        base_package_list=args.base_package_list,
+        api_key=args.api_key,
+        host=args.host,
+        query_restriction=sys.maxsize if args.query_restriction is None
+                                    else args.query_restriction)
+
+def exit_error(message: str) -> None:
+    """Exit the program with an error message."""
+    # log.error(message)
+    sys.exit(f"Error: {message}")
+
+def wait_for_keypress():
+    """Wait for a key press or ESC key to exit."""
+    print("Press any key to continue or ESC to stop...")
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    tty.setraw(fd);
+    try:
+        # wait for a key press if ESC is pressed, exit
+        sys.stdin.read(1)=='\x1b' and sys.exit("Stopping execution.")
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+if __name__ == "__main__":
+    main()

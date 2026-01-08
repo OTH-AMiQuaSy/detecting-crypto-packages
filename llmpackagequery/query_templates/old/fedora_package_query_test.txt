@@ -1,0 +1,14 @@
+Kindly analyze this Fedora package: '{name}'. Evaluate whether it uses security functions such as cryptography, certificate management, or key exchange in ways relevant for post-quantum cryptography (PQC) migration.
+
+Description: {description}
+
+Return a CSV line where:
+* Column 1: Package name.
+* Column 2: "True" if the package implements cryptographic functions natively. "False" if it delegates all cryptographic functions to external libraries or does not involve cryptography.
+* Column 3: A short explanation of why the package was marked "True" or "False".
+
+Important Notes:
+* Consider "implementing cryptography natively" to mean that the package contains its own cryptographic algorithms or protocols, **NOT** relying exclusively on external libraries like **OpenSSL, NSS, BoringSSL, or GnuTLS**.
+* quote all columns
+* suppress error messages
+* do not add a header

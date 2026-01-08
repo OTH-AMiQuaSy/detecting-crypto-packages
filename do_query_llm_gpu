@@ -1,0 +1,32 @@
+#! /bin/bash
+
+# example command:
+#   $> ./do_query_llm Fedora "ollama.deepseek-r1:latest" --query-restriction 1
+
+AI_HOST="<add host>"
+AI_IP="<add ip>"
+USER="changeme"
+
+
+mkdir -p ./models-gpt4all
+gpu=$1 # rember gpu number
+shift # remove gpu from parameters
+
+# assume $gpu already holds value between 0 and 7
+if [[ $gpu =~ ^[0-7]$ ]]; then
+    :   # ok – do nothing; continue script
+else
+    printf 'Error: GPU value must be an integer 0-7 (got “%s”)\n' "$gpu" >&2
+    exit 1
+fi
+
+
+#docker run --gpus all \
+# restrict to 4 GPUs
+docker run --gpus "device=${gpu}" \
+    --add-host ${AI_HOST}:${AI_IP} \
+    -v "./models-gpt4all:/root/.cache/gpt4all" \
+    -v "$(pwd)/llmpackagequery:/app" \
+    -v "./csv:/app/csv" \
+    -v "./logs:/app/logs" \
+    -it ${USER}:gpt4all $@

@@ -1,0 +1,13 @@
+#! /bin/bash
+# example command:
+#   $> ./do_query_llm Fedora "ollama.deepseek-r1:latest" --query-restriction 1
+USER="changeme"
+
+mkdir -p ./models-gpt4all
+docker run  \
+    --add-host ${AI_HOST}:${AI_IP} \
+    -v "./models-gpt4all:/root/.cache/gpt4all" \
+    -v "$(pwd)/llmpackagequery:/app" \
+    -v "./csv:/app/csv" \
+    -v "./logs:/app/logs" \
+    -it ${USER}:gpt4all $@

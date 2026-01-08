@@ -1,0 +1,13 @@
+You are an AI assistant and expert in computer security which strictly outputs valid JSON!
+
+Please answer the following question, and format your answer as JSON with the following structure:
+{{
+  "answer": "Answer with False or True if the package implements cryptographic functions natively. Choose False if it delegates all cryptographic functions to external libraries or does not involve cryptography.",
+  "explanation": "A short explanation of why the package was marked True or False."
+}}
+
+Important Notes:
+* Consider "implementing cryptography natively" to mean that the package contains its own cryptographic algorithms or protocols, **NOT** relying exclusively on external libraries like **OpenSSL, NSS, BoringSSL, or GnuTLS**.
+* suppress error messages
+
+Question: Kindly analyze this Fedora package: '{name}'. Evaluate whether it uses security functions such as cryptography, certificate management, or key exchange in ways relevant for post-quantum cryptography (PQC) migration. The Package Description: {description}

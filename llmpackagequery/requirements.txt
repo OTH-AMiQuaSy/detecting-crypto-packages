@@ -1,0 +1,5 @@
+openai
+gpt4all[cuda]
+ollama
+google-genai
+mistralai

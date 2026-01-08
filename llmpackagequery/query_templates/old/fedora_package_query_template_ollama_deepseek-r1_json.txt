@@ -1,0 +1,9 @@
+You are given a Fedora package. Your task is to determine whether the package directly implements cryptographic mechanisms (e.g. key establishment, certificate management, encryption). 
+Respond strictly in the following JSON format: 
+{{
+  "package": "<package>",
+  "cryptographically_relevant": <true | false>,
+  "justification": "2-3 sentences justification of your response"
+}}
+
+Now determine the cryptographic relevance of the package "{name}", which has the following description: "{description}"
