@@ -4,6 +4,8 @@ This repository contains code and resources to detect cryptographic packages in 
 
 This work is part of a larger effort to enhance the discovery and classification of cryptographic assets in software ecosystems and has been developed based on research conducted at [OTH Amberg/Weiden](https://www.oth-aw.de/) in the scope of the scientific project [AMiQuaSy](https://www.forschung-it-sicherheit-kommunikationssysteme.de/projekte/amiquasy).
 
+The approach is published in the paper ["Detecting Cryptographically Relevant Software Packages with Collaborative LLMs"](https://doi.org/10.48550/arXiv.2603.07204) and is publicly available.
+
 **Important:** This approach will be integrated into a broader cryptographic asset discovery framework, to which this repository will refer once it becomes available.
 
 
